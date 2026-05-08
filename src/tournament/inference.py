@@ -32,7 +32,7 @@ from PIL import Image
 from sklearn.metrics import average_precision_score
 from tqdm import tqdm
 
-from src.common.data import PairKey, prepare_image
+from src.common.data import PairKey, prepare_image, write_checkpoint_csv
 from src.tournament.config import TournamentConfig
 from src.vlm.inference import (
     _apply_chat_template,
@@ -702,9 +702,28 @@ def run_tournament_inference(
     model,
     processor,
     cfg: TournamentConfig,
+    *,
+    checkpoint_path: str | None = None,
+    samples_per_save: int = 0,
+    resume_data: dict[int, dict] | None = None,
 ) -> tuple[np.ndarray, dict[PairKey, dict[str, list]], list[str] | None]:
     """
     Run tournament inference on every row of *df*.
+
+    Parameters
+    ----------
+    checkpoint_path : str | None
+        If set together with *samples_per_save*, the predictions CSV is
+        written to this path every *samples_per_save* newly completed
+        images so that partial results survive a crash.
+    samples_per_save : int
+        Number of newly completed images between periodic checkpoint
+        writes.  ``0`` (default) disables periodic saving.
+    resume_data : dict[int, dict] | None
+        Pre-computed results loaded from a previous checkpoint CSV via
+        :func:`~src.common.data.load_checkpoint_csv`.  Keys are
+        ``original_index`` values; each value has at least ``"score"``
+        and optionally ``"model_output"``.
 
     Returns the same triple as ``vlm_inference.run_vlm_inference`` so that
     downstream metrics and plotting code can be reused:
@@ -735,6 +754,37 @@ def run_tournament_inference(
 
     rng = np.random.default_rng(seed=42)
 
+    # --- Resume: pre-fill scores and skip already-processed images ---
+    has_orig = "original_index" in df.columns
+    orig_to_row: dict[int, int] = {}
+    for i in range(num_images):
+        orig_idx = int(df.iloc[i]["original_index"]) if has_orig else i
+        orig_to_row[orig_idx] = i
+
+    resumed_rows: set[int] = set()
+    if resume_data:
+        for orig_idx, data in resume_data.items():
+            if orig_idx in orig_to_row:
+                row_idx = orig_to_row[orig_idx]
+                max_scores[row_idx] = data["score"]
+                seen_mask[row_idx] = True
+                if "model_output" in data:
+                    text_outputs[row_idx] = data["model_output"]
+                if pair_label not in pair_scores:
+                    pair_scores[pair_label] = {
+                        "indices": [], "scores": [], "detections": [],
+                    }
+                pair_scores[pair_label]["indices"].append(row_idx)
+                pair_scores[pair_label]["scores"].append(data["score"])
+                pair_scores[pair_label]["detections"].append(
+                    {"boxes": [], "scores": []},
+                )
+                resumed_rows.add(row_idx)
+        logger.info(
+            "Resumed %d / %d images from checkpoint.",
+            len(resumed_rows), num_images,
+        )
+
     # Estimate inference calls per sample for logging.
     if cfg.tournament_strategy == "simple_ranking":
         calls_per_sample = cfg.repeat
@@ -760,13 +810,15 @@ def run_tournament_inference(
 
     logger.info(
         "Tournament: strategy=%s  scoring_mode=%s  num_references=%d  "
-        "use_grid=%s  repeat=%d  images=%d  ~%d VLM call(s)/sample",
+        "use_grid=%s  repeat=%d  images=%d  remaining=%d  "
+        "~%d VLM call(s)/sample",
         strategy_label,
         cfg.scoring_mode,
         cfg.num_references,
         cfg.use_grid,
         cfg.repeat,
         num_images,
+        num_images - len(resumed_rows),
         calls_per_sample,
     )
 
@@ -775,11 +827,15 @@ def run_tournament_inference(
     report_interval_s = cfg.report_interval_minutes * 60
     last_report_time = time.time()
     processed = 0
+    last_save_count = 0
 
     for idx in tqdm(
         range(num_images),
         desc=f"Tournament ({cfg.tournament_strategy})",
     ):
+        if idx in resumed_rows:
+            continue
+
         image_path = df.iloc[idx][col]
         item_id = str(df.iloc[idx]["item_identifier"])
 
@@ -838,7 +894,21 @@ def run_tournament_inference(
 
         torch.cuda.empty_cache()
 
-        # Periodic progress report.
+        # --- Periodic checkpoint ---
+        if samples_per_save > 0 and checkpoint_path:
+            if processed - last_save_count >= samples_per_save:
+                n_saved = write_checkpoint_csv(
+                    df, max_scores, labels, seen_mask,
+                    cfg.data_dir, cfg.crop, checkpoint_path,
+                    model_outputs=text_outputs,
+                )
+                logger.info(
+                    "  [Checkpoint] Saved %d rows to %s",
+                    n_saved, checkpoint_path,
+                )
+                last_save_count = processed
+
+        # --- Periodic progress report ---
         now = time.time()
         if now - last_report_time >= report_interval_s:
             scored_labels = labels[seen_mask]
@@ -872,10 +942,10 @@ def run_tournament_inference(
             last_report_time = now
 
     logger.info("Total inference time: %.2fs", total_time)
-    if num_images > 0:
+    if processed > 0:
         logger.info(
             "Average per image:    %.1fms",
-            total_time / num_images * 1000,
+            total_time / processed * 1000,
         )
 
     return max_scores, pair_scores, text_outputs

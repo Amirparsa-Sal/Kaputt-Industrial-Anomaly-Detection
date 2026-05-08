@@ -31,6 +31,7 @@ VLM_DEFAULTS: dict = {
     "load_in_4bit": False,
     "enable_thinking": False,
     "report_interval_minutes": 30,
+    "samples_per_save": 0,
     "min_pixels": 200704,
     "max_pixels": 401408,
     # Few-shot: if reference parquet has 1–2 images per item, cycle them to
@@ -75,6 +76,7 @@ class VLMConfig:
     max_new_tokens: int = 256
     enable_thinking: bool = False
     report_interval_minutes: float = 30
+    samples_per_save: int = 0
 
     thresholds: list | None = None
 

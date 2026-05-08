@@ -19,12 +19,11 @@ All prompts are defined in the YAML config (system + user strings for each
 shot and scoring mode).
 
 Usage:
-    python scripts/run_vlm_inference.py --config configs/vlm/vlm_base.yaml
     python scripts/run_vlm_inference.py --config configs/vlm/vlm_base.yaml \\
-        --override configs/vlm/vlm_few_logits.yaml configs/vlm/vlm_few_text.yaml
+        --session-dir experiments/my_session
     python scripts/run_vlm_inference.py --config configs/vlm/vlm_base.yaml \\
-        --override configs/vlm/vlm_few_text.yaml \\
-        --session-dir experiments/session_20260103_120000
+        --override configs/vlm/vlm_few_logits.yaml configs/vlm/vlm_few_text.yaml \\
+        --session-dir experiments/my_session
 """
 
 import argparse
@@ -32,7 +31,6 @@ import logging
 import os
 import sys
 import warnings
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -155,13 +153,13 @@ def main() -> None:
     parser.add_argument(
         "--session-dir",
         type=str,
-        default=None,
+        required=True,
         help=(
             "Session folder: each run writes to <session-dir>/<exp_name>/. "
             "If this folder already exists (e.g. continuing later), "
-            "session.log is appended and AUROC/AP comparison plots include "
-            "every subfolder that has results.json. "
-            "Default: create a new experiments/session_<timestamp> directory."
+            "session.log is appended, AUROC/AP comparison plots include "
+            "every subfolder that has results.json, and any existing "
+            "inference_predictions.csv is used to resume automatically."
         ),
     )
     parser.add_argument(
@@ -177,18 +175,9 @@ def main() -> None:
 
     overrides = args.override or [None]
 
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    if args.session_dir:
-        session_dir = os.path.abspath(args.session_dir)
-        session_log = os.path.join(session_dir, "session.log")
-        append_session = os.path.isfile(session_log)
-    else:
-        session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_dir = os.path.join(
-            repo_root, "experiments", f"session_{session_ts}",
-        )
-        append_session = False
+    session_dir = os.path.abspath(args.session_dir)
+    session_log = os.path.join(session_dir, "session.log")
+    append_session = os.path.isfile(session_log)
 
     os.makedirs(session_dir, exist_ok=True)
     setup_logging(session_dir, append=append_session)

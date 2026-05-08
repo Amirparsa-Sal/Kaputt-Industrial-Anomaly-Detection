@@ -1,5 +1,6 @@
 """
-Data loading, filtering, image preparation, and prompt-pair expansion.
+Data loading, filtering, image preparation, prompt-pair expansion,
+and checkpoint utilities for failure recovery.
 """
 
 import csv
@@ -288,3 +289,85 @@ def write_inference_predictions_csv(
             if model_outputs is not None:
                 row.append(model_outputs[i])
             writer.writerow(row)
+
+
+# ---------------------------------------------------------------------------
+# Checkpoint utilities for failure recovery
+# ---------------------------------------------------------------------------
+
+def load_checkpoint_csv(csv_path: str) -> dict[int, dict]:
+    """
+    Load a checkpoint (or partial) predictions CSV from a previous
+    interrupted run.
+
+    Returns a dict mapping ``original_index`` → ``{"score": float,
+    "model_output": str | None}``.  The ``model_output`` key is only
+    present when the CSV includes that column.
+    """
+    result: dict[int, dict] = {}
+    with open(csv_path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        has_model_output = "model_output" in (reader.fieldnames or [])
+        for row in reader:
+            orig_idx = int(row["original_index"])
+            entry: dict = {"score": float(row["predicted_score"])}
+            if has_model_output:
+                entry["model_output"] = row.get("model_output", "")
+            result[orig_idx] = entry
+    return result
+
+
+def write_checkpoint_csv(
+    df: pd.DataFrame,
+    max_scores: np.ndarray,
+    labels: np.ndarray,
+    completed_mask: np.ndarray,
+    data_dir: str,
+    crop: bool,
+    out_path: str,
+    model_outputs: list[str] | None = None,
+) -> int:
+    """
+    Write only the *completed* rows to a checkpoint CSV.
+
+    Same column format as :func:`write_inference_predictions_csv` so that
+    the file can be used directly with ``--resume-csv`` or as a final
+    predictions file if the experiment never finishes.
+
+    Parameters
+    ----------
+    completed_mask : np.ndarray[bool]
+        Boolean array aligned with *df* — ``True`` for images whose
+        inference is finished and whose score is final.
+
+    Returns
+    -------
+    int
+        Number of rows written.
+    """
+    col = "query_crop" if crop else "query_image"
+    has_orig = "original_index" in df.columns
+    n = len(df)
+
+    header = ["original_index", "image_path", "predicted_score", "label"]
+    has_model = model_outputs is not None
+    if has_model:
+        header.append("model_output")
+
+    count = 0
+    with open(out_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        writer.writerow(header)
+        for i in range(n):
+            if not completed_mask[i]:
+                continue
+            orig_idx = df.iloc[i]["original_index"] if has_orig else i
+            rel = df.iloc[i][col]
+            full_path = os.path.abspath(os.path.join(data_dir, rel))
+            row = [orig_idx, full_path, float(max_scores[i]), int(labels[i])]
+            if has_model:
+                row.append(model_outputs[i])
+            writer.writerow(row)
+            count += 1
+
+    return count

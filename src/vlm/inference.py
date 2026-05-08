@@ -23,6 +23,7 @@ from src.common.data import (
     build_reference_path_lookup,
     compose_vlm_few_shot_grid,
     prepare_image,
+    write_checkpoint_csv,
 )
 from src.vlm.config import VLMConfig
 
@@ -263,9 +264,28 @@ def run_vlm_inference(
     model,
     processor,
     cfg: VLMConfig,
+    *,
+    checkpoint_path: str | None = None,
+    samples_per_save: int = 0,
+    resume_data: dict[int, dict] | None = None,
 ) -> tuple[np.ndarray, dict[PairKey, dict[str, list]], list[str] | None]:
     """
     Run VLM anomaly classification on every row of *df*.
+
+    Parameters
+    ----------
+    checkpoint_path : str | None
+        If set together with *samples_per_save*, the predictions CSV is
+        written to this path every *samples_per_save* newly completed
+        images so that partial results survive a crash.
+    samples_per_save : int
+        Number of newly completed images between periodic checkpoint
+        writes.  ``0`` (default) disables periodic saving.
+    resume_data : dict[int, dict] | None
+        Pre-computed results loaded from a previous checkpoint CSV via
+        :func:`~src.common.data.load_checkpoint_csv`.  Keys are
+        ``original_index`` values; each value has at least ``"score"``
+        and optionally ``"model_output"``.
 
     Returns
     -------
@@ -305,18 +325,46 @@ def run_vlm_inference(
 
     num_images = len(df)
 
-    logger.info(
-        f"shot_mode={cfg.shot_mode}  scoring_mode={cfg.scoring_mode}  "
-        f"images={num_images}",
-    )
-
     max_scores = np.zeros(num_images, dtype=np.float64)
-    # Track which rows were actually inferred so a valid score of 0.0 is not
-    # mistaken for "not processed yet" in interim reporting.
     seen_mask = np.zeros(num_images, dtype=bool)
     pair_scores: dict[PairKey, dict[str, list]] = {}
     text_outputs: list[str] | None = (
         [""] * num_images if cfg.scoring_mode == "text" else None
+    )
+
+    # --- Resume: pre-fill scores and skip already-processed images ---
+    has_orig = "original_index" in df.columns
+    orig_to_row: dict[int, int] = {}
+    for i in range(num_images):
+        orig_idx = int(df.iloc[i]["original_index"]) if has_orig else i
+        orig_to_row[orig_idx] = i
+
+    resumed_rows: set[int] = set()
+    if resume_data:
+        for orig_idx, data in resume_data.items():
+            if orig_idx in orig_to_row:
+                row_idx = orig_to_row[orig_idx]
+                max_scores[row_idx] = data["score"]
+                seen_mask[row_idx] = True
+                if text_outputs is not None and "model_output" in data:
+                    text_outputs[row_idx] = data["model_output"]
+                if pair_label not in pair_scores:
+                    pair_scores[pair_label] = {
+                        "indices": [], "scores": [], "detections": [],
+                    }
+                pair_scores[pair_label]["indices"].append(row_idx)
+                pair_scores[pair_label]["scores"].append(data["score"])
+                pair_scores[pair_label]["detections"].append(
+                    {"boxes": [], "scores": []},
+                )
+                resumed_rows.add(row_idx)
+        logger.info(
+            f"Resumed {len(resumed_rows)} / {num_images} images from checkpoint."
+        )
+
+    logger.info(
+        f"shot_mode={cfg.shot_mode}  scoring_mode={cfg.scoring_mode}  "
+        f"images={num_images}  remaining={num_images - len(resumed_rows)}",
     )
 
     yes_ids, no_ids = [], []
@@ -329,11 +377,15 @@ def run_vlm_inference(
     report_interval_s = cfg.report_interval_minutes * 60
     last_report_time = time.time()
     processed = 0
+    last_save_count = 0
 
     for idx, image_path, item_id in tqdm(
         assignments,
         desc=f"VLM ({cfg.shot_mode}/{cfg.scoring_mode})",
     ):
+        if idx in resumed_rows:
+            continue
+
         image = _prepare_model_input_image(
             image_path, item_id, cfg, ref_lookup,
         )
@@ -373,6 +425,20 @@ def run_vlm_inference(
 
         torch.cuda.empty_cache()
 
+        # --- Periodic checkpoint ---
+        if samples_per_save > 0 and checkpoint_path:
+            if processed - last_save_count >= samples_per_save:
+                n_saved = write_checkpoint_csv(
+                    df, max_scores, labels, seen_mask,
+                    cfg.data_dir, cfg.crop, checkpoint_path,
+                    model_outputs=text_outputs,
+                )
+                logger.info(
+                    f"  [Checkpoint] Saved {n_saved} rows to {checkpoint_path}"
+                )
+                last_save_count = processed
+
+        # --- Periodic interim report ---
         now = time.time()
         if now - last_report_time >= report_interval_s:
             scored_mask = seen_mask[:num_images]
@@ -406,9 +472,9 @@ def run_vlm_inference(
             last_report_time = now
 
     logger.info(f"Total inference time: {total_time:.2f}s")
-    if num_images > 0:
+    if processed > 0:
         logger.info(
-            f"Average per image:    {total_time / num_images * 1000:.1f}ms"
+            f"Average per image:    {total_time / processed * 1000:.1f}ms"
         )
 
     return max_scores, pair_scores, text_outputs

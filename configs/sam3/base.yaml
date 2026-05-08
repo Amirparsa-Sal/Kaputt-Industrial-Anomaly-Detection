@@ -24,6 +24,12 @@ batch_size: 8
 mask_threshold: 0.5
 gpu_id: 0                    # which CUDA GPU to use (0, 1, 2, ...)
 
+# --- Failure recovery ---
+# Save a checkpoint of inference_predictions.csv every N completed images.
+# Set to 0 to disable periodic saving (CSV is still written at the end).
+# To resume an interrupted run, simply re-run with the same --session-dir.
+samples_per_save: 0
+
 # --- Thresholds for AUROC / confusion matrix ---
 # Inference runs once at the lowest threshold; AUROC and confusion
 # matrices are computed post-hoc for every threshold in this list.

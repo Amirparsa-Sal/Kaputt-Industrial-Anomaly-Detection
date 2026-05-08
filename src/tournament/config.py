@@ -37,6 +37,7 @@ TOURNAMENT_DEFAULTS: dict = {
     "load_in_4bit": False,
     "enable_thinking": False,
     "report_interval_minutes": 30,
+    "samples_per_save": 0,
     "min_pixels": 200704,
     "max_pixels": 401408,
     "tournament_strategy": "simple_ranking",
@@ -82,6 +83,7 @@ class TournamentConfig:
     max_new_tokens: int = 256
     enable_thinking: bool = False
     report_interval_minutes: float = 30
+    samples_per_save: int = 0
 
     # ---- Tournament ----
     tournament_strategy: str = "simple_ranking"

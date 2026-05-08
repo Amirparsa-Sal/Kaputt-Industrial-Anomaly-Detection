@@ -37,6 +37,7 @@ DEFAULTS = {
     "exp_name": None,
     "prompts": None,
     "gpu_id": 0,
+    "samples_per_save": 0,
 }
 
 
@@ -61,6 +62,7 @@ class Config:
     exp_name: str | None = None
     prompts: dict[str, list[str]] | None = None
     gpu_id: int = 0
+    samples_per_save: int = 0
 
     def __post_init__(self) -> None:
         if not self.data_dir:

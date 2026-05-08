@@ -11,7 +11,7 @@ import numpy as np
 from sklearn.metrics import average_precision_score
 
 from src.sam3.config import Config
-from src.common.data import load_and_filter_data, write_inference_predictions_csv
+from src.common.data import load_and_filter_data, load_checkpoint_csv, write_inference_predictions_csv
 from src.sam3.inference import run_inference
 from src.common.metrics import (
     compute_auroc,
@@ -249,10 +249,19 @@ def run_experiment(
         remove_log_handler(exp_log_handler)
         return None
 
-    # ---- Inference (all prompts, lowest threshold) ----
-    max_scores, pair_scores = run_inference(df, model, processor, cfg)
-    labels = df["defect"].astype(int).values
+    # ---- Auto-detect checkpoint CSV from a previous interrupted run ----
     predictions_csv = os.path.join(exp_dir, "inference_predictions.csv")
+    resume_data: dict[int, dict] | None = None
+    if os.path.isfile(predictions_csv):
+        resume_data = load_checkpoint_csv(predictions_csv)
+        logger.info(f"  Resuming: loaded {len(resume_data)} rows from {predictions_csv}")
+    max_scores, pair_scores = run_inference(
+        df, model, processor, cfg,
+        checkpoint_path=predictions_csv,
+        samples_per_save=cfg.samples_per_save,
+        resume_data=resume_data,
+    )
+    labels = df["defect"].astype(int).values
     write_inference_predictions_csv(
         df, max_scores, labels, cfg.data_dir, cfg.crop, predictions_csv,
     )

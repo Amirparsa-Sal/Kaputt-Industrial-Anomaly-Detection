@@ -33,6 +33,12 @@ max_new_tokens: 256
 enable_thinking: false
 report_interval_minutes: 30
 
+# --- Failure recovery ---
+# Save a checkpoint of inference_predictions.csv every N completed images.
+# Set to 0 to disable periodic saving (CSV is still written at the end).
+# To resume an interrupted run, simply re-run with the same --session-dir.
+samples_per_save: 50
+
 # --- Tournament (defaults — override per strategy) ---
 tournament_strategy: simple_ranking
 num_references: 3

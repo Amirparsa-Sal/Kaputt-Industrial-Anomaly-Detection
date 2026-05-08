@@ -13,7 +13,7 @@ import os
 import numpy as np
 from sklearn.metrics import average_precision_score
 
-from src.common.data import PairKey, load_and_filter_data, write_inference_predictions_csv
+from src.common.data import PairKey, load_and_filter_data, load_checkpoint_csv, write_inference_predictions_csv
 from src.common.metrics import (
     compute_auroc,
     compute_binary_metrics,
@@ -268,12 +268,19 @@ def run_tournament_experiment(
         _remove_handler(exp_handler)
         return None
 
-    # ---- Tournament inference ----
+    # ---- Auto-detect checkpoint CSV from a previous interrupted run ----
+    predictions_csv = os.path.join(exp_dir, "inference_predictions.csv")
+    resume_data: dict[int, dict] | None = None
+    if os.path.isfile(predictions_csv):
+        resume_data = load_checkpoint_csv(predictions_csv)
+        logger.info("  Resuming: loaded %d rows from %s", len(resume_data), predictions_csv)
     max_scores, pair_scores, text_outputs = run_tournament_inference(
         df, model, processor, cfg,
+        checkpoint_path=predictions_csv,
+        samples_per_save=cfg.samples_per_save,
+        resume_data=resume_data,
     )
     labels = df["defect"].astype(int).values
-    predictions_csv = os.path.join(exp_dir, "inference_predictions.csv")
     write_inference_predictions_csv(
         df,
         max_scores,

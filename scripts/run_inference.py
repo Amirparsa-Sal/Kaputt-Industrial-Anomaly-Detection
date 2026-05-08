@@ -8,16 +8,15 @@ All parameters — data paths, filters, model settings, prompts, and experiment
 metadata — are specified in a single YAML config file.
 
 Usage:
-    python scripts/run_inference.py --config configs/sam3/base.yaml
+    python scripts/run_inference.py --config configs/sam3/base.yaml --session-dir experiments/my_session
     python scripts/run_inference.py --config configs/sam3/base.yaml --override configs/sam3/crop.yaml \\
-        --session-dir experiments/session_20260103_120000
+        --session-dir experiments/my_session
 """
 
 import argparse
 import logging
 import os
 import sys
-from datetime import datetime
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -54,11 +53,13 @@ def main() -> None:
     parser.add_argument(
         "--session-dir",
         type=str,
-        default=None,
+        required=True,
         help=(
             "Session folder for experiment subdirs. If it already exists, "
-            "session.log is appended and comparison charts use every "
-            "results.json found. Default: experiments/session_<timestamp>."
+            "session.log is appended, comparison charts use every "
+            "results.json found, and any existing inference_predictions.csv "
+            "inside an experiment subfolder is used to resume inference "
+            "automatically."
         ),
     )
     parser.add_argument(
@@ -74,18 +75,9 @@ def main() -> None:
 
     overrides = args.override or [None]
 
-    repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-
-    if args.session_dir:
-        session_dir = os.path.abspath(args.session_dir)
-        session_log = os.path.join(session_dir, "session.log")
-        append_session = os.path.isfile(session_log)
-    else:
-        session_ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-        session_dir = os.path.join(
-            repo_root, "experiments", f"session_{session_ts}",
-        )
-        append_session = False
+    session_dir = os.path.abspath(args.session_dir)
+    session_log = os.path.join(session_dir, "session.log")
+    append_session = os.path.isfile(session_log)
 
     os.makedirs(session_dir, exist_ok=True)
     setup_logging(session_dir, append=append_session)
