@@ -1,0 +1,179 @@
+# ============================================================
+# VLM Anomaly Classification — Base Config
+# ============================================================
+# Usage:
+#   python run_vlm_inference.py --config configs/vlm_base.yaml
+#   python run_vlm_inference.py --config configs/vlm_base.yaml \
+#       --override configs/vlm_exp1.yaml
+
+# --- Data ---
+data_dir: /data/kaputt1/
+split: train                    # train | validation | test
+is_defect: "any"
+major_defect: "any"
+defect_type: any                # structural | logical | any
+num_data: 10                  # -1 = all
+crop: true
+mask: false
+# Required for few_shot (side length of the final 2×2 montage in pixels).
+# For zero_shot, passed through to query image resize (may be null for native res).
+input_size: 1024
+
+# --- Model ---
+model_name: Qwen/Qwen3.5-9B
+cache_dir: /storage/VLM/hf
+
+# --- GPU & Memory ---
+gpu_id: 0
+load_in_4bit: false
+min_pixels: 200704
+max_pixels: 401408
+
+# --- Scoring ---
+# logits — P(Yes) from next-token logits; text — parse SCORE: from generation
+scoring_mode: logits
+
+# --- Shot mode ---
+# zero_shot — one query image only.
+# few_shot — 2×2 grid: query top-left, three reference images (same item_identifier)
+#            from {data_dir}/reference-{split}.parquet in the other cells.
+shot_mode: zero_shot
+
+# few_shot only: if an item has 1–2 reference rows, cycle them to fill 3 panels (default).
+# Set false to require exactly 3 reference rows per item_identifier.
+pad_short_references: true
+
+temperature: 0.0
+max_new_tokens: 256
+enable_thinking: false
+report_interval_minutes: 30
+
+thresholds:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+
+exp_name: qwen3.5_9b_experiment
+
+# ============================================================
+# Prompts — all eight strings are required in YAML (no code defaults)
+# ============================================================
+
+# --- System messages (logits = Yes/No style; text = free-form + SCORE:) ---
+
+system_prompt_logits_zero_shot: |-
+  You are a quality inspector. Answer questions with only
+  'Yes' or 'No'. Do not explain or think step by step.
+
+system_prompt_logits_few_shot: |-
+  You are a quality inspector. The user image is a 2×2 grid: top-left is the
+  query product image; the other three panels are reference images of the same
+  item in normal condition. Compare the query to those references and decide
+  whether the query shows abnormal differences consistent with a defect.
+  Answer with only 'Yes' or 'No'. Do not explain or think step by step.
+
+system_prompt_text_zero_shot: |-
+  You are an expert quality control inspector analyzing products for defects.
+
+system_prompt_text_few_shot: |-
+  You are an expert quality control inspector. The user image is a 2×2 grid:
+  top-left is the query product image; the other three panels are reference
+  images of the same product in good condition. Compare the query to the
+  references and judge whether meaningful differences indicate a defect in
+  the query.
+
+# --- User task text (single image vs grid); edit defect lists as needed ---
+
+user_prompt_logits_zero_shot: |-
+  Examine this product image carefully for any signs of damage or defect.
+
+  Consider the following structural defect types:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  And also the following logical defect types:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Is there any defect visible in this image? Answer only Yes or No.
+
+user_prompt_logits_few_shot: |-
+  The picture shows a 2×2 grid. Top-left is the query image. Top-right,
+  bottom-left, and bottom-right are three reference views of the same product
+  in normal (non-defective) condition.
+
+  Use the references as the baseline for how the product should look. Compare
+  the query (top-left) against them. There are 2 types of potential defects:
+
+  Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Compared to the references, does the query image show a defect? Answer only Yes or No.
+
+user_prompt_text_zero_shot: |-
+  Examine this product image carefully for any signs of damage or defect.
+
+  Consider the following structural defect types:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  And also the following logical defect types:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Analyze the image, provide a short explanation, then output one numeric
+  anomaly score between 0.0 and 1.0.
+
+  Return EXACTLY in this format:
+  ANALYSIS: <brief explanation>
+  SCORE: <number between 0.0 and 1.0>
+
+  Do not output DEFECT labels or any additional fields.
+
+user_prompt_text_few_shot: |-
+  The picture shows a 2×2 grid. Top-left is the query image. Top-right,
+  bottom-left, and bottom-right are three reference views of the same product
+  in normal (non-defective) condition.
+
+  Use the references as the baseline for how the product should look. Compare the query to them and describe
+  relevant similarities and differences. There are 2 types of potential defects:
+
+  Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Compare the query to the references, provide a short explanation, then output
+  one numeric anomaly score between 0.0 and 1.0.
+
+  Return EXACTLY in this format:
+  ANALYSIS: <brief explanation>
+  SCORE: <number between 0.0 and 1.0>
+
+  Do not output DEFECT labels or any additional fields.

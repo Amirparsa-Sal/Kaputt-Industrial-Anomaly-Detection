@@ -1,0 +1,13 @@
+# ============================================================
+# Example experiment override
+# ============================================================
+# Only specify the keys that differ from base.yaml.
+# All other settings are inherited from the base config.
+#
+# Usage:
+#   python run_inference.py --config configs/base.yaml --override configs/exp_example.yaml
+
+exp_name: multi_prompt_crop
+
+# Override inference parameters
+crop: true

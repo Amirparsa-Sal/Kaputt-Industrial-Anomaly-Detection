@@ -1,0 +1,50 @@
+# ============================================================
+# Tournament — Simple Ranking (override)
+# ============================================================
+# Presents the query image alongside m reference images and asks
+# the model to rank all images from most to least anomalous.
+#
+# Usage:
+#   python run_tournament_inference.py --config configs/tournament_base.yaml \
+#       --override configs/tournament_simple_ranking.yaml
+
+exp_name: league_simple_ranking
+
+tournament_strategy: simple_ranking
+num_references: 3
+use_grid: true
+repeat: 1
+input_size: 1024
+
+system_prompt_ranking: |-
+  You are a quality inspector analyzing product images for defects.
+  You will examine multiple product images and rank them from most
+  anomalous (most likely defective) to least anomalous (most likely normal).
+  Treat all images equally — none is designated as a reference or query.
+  Output only the ranking in the specified format.
+  Do not explain or think step by step.
+
+user_prompt_ranking: |-
+  {image_description}
+
+  Examine all {num_images} images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Rank ALL {num_images} images from most anomalous (rank 1) to least
+  anomalous (rank {num_images}).
+
+  Output EXACTLY in this format (comma-separated image numbers, most anomalous first):
+  RANKING: <image numbers>
+
+  Example for 4 images: RANKING: 3, 1, 4, 2

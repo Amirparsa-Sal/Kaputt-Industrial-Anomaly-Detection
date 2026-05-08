@@ -1,0 +1,151 @@
+# ============================================================
+# Tournament-based VLM Anomaly Detection — Base Config
+# ============================================================
+# Usage:
+#   python run_tournament_inference.py --config configs/tournament_base.yaml
+#   python run_tournament_inference.py --config configs/tournament_base.yaml \
+#       --override configs/tournament_simple_ranking.yaml
+
+# --- Data ---
+data_dir: /data/kaputt1/
+split: train
+is_defect: "any"
+major_defect: "any"
+defect_type: any
+num_data: 10
+crop: true
+mask: false
+input_size: 1024
+
+# --- Model ---
+model_name: Qwen/Qwen3.5-9B
+cache_dir: /storage/VLM/hf
+
+# --- GPU & Memory ---
+gpu_id: 0
+load_in_4bit: false
+min_pixels: 200704
+max_pixels: 401408
+
+# --- Generation ---
+temperature: 0.0
+max_new_tokens: 256
+enable_thinking: false
+report_interval_minutes: 30
+
+# --- Tournament (defaults — override per strategy) ---
+tournament_strategy: simple_ranking
+num_references: 3
+use_grid: true
+repeat: 1
+league_type: swiss
+
+thresholds:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+
+exp_name: tournament_experiment
+
+# ============================================================
+# Prompts — Placeholders {image_description} and {num_images}
+# are filled at runtime based on use_grid and image count.
+# ============================================================
+
+# --- Simple Ranking prompts ---
+system_prompt_ranking: |-
+  You are a quality inspector analyzing product images for defects.
+  You will examine multiple product images and rank them from most
+  anomalous (most likely defective) to least anomalous (most likely normal).
+  Treat all images equally — none is designated as a reference or query.
+  Output only the ranking in the specified format.
+  Do not explain or think step by step.
+
+user_prompt_ranking: |-
+  {image_description}
+
+  Examine all {num_images} images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Rank ALL {num_images} images from most anomalous (rank 1) to least
+  anomalous (rank {num_images}).
+
+  Output EXACTLY in this format (comma-separated image numbers, most anomalous first):
+  RANKING: <image numbers>
+
+  Example for 4 images: RANKING: 3, 1, 4, 2
+
+# --- League prompts — text mode (generate "CONFIDENCE: <float>") ---
+system_prompt_league: |-
+  You are a quality inspector comparing two product images.
+  Determine which image appears more anomalous or defective.
+  Output only a confidence score in the specified format.
+  Do not explain or think step by step.
+
+user_prompt_league: |-
+  {image_description}
+
+  Compare the two images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  On a scale of 0.0 to 1.0, how confident are you that Image A is more
+  anomalous than Image B?
+  - 0.0 means you are certain Image B is more anomalous
+  - 0.5 means both images appear equally anomalous (or equally normal)
+  - 1.0 means you are certain Image A is more anomalous
+
+  Output EXACTLY in this format:
+  CONFIDENCE: <number between 0.0 and 1.0>
+
+# --- League prompts — logits mode (P(Yes) from next-token logits) ---
+system_prompt_league_logits: |-
+  You are a quality inspector comparing two product images.
+  Determine which image appears more anomalous or defective.
+  Answer with only 'Yes' or 'No'. Do not explain or think step by step.
+
+user_prompt_league_logits: |-
+  {image_description}
+
+  Compare the two images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Is Image A more anomalous than Image B? Answer only Yes or No.

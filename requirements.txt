@@ -1,0 +1,13 @@
+accelerate
+bitsandbytes
+gradio
+huggingface_hub
+matplotlib
+numpy
+pandas
+Pillow
+PyYAML
+scikit-learn
+torch
+tqdm
+transformers

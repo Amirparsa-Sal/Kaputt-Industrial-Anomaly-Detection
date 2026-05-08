@@ -1,0 +1,44 @@
+exp_name: vlm_few
+
+# Override inference parameters
+shot_mode: few_shot
+mask: false
+crop: true
+scoring_mode: logits
+input_size: 2048
+num_data: 1500
+
+system_prompt_logits_few_shot: |-
+  You are a quality inspector. The user image is a 2×2 grid: top-left is the
+  query product image; the other three panels are reference images of the same
+  item (unlabeled — they may or may not be defective). Compare the query to
+  those references and decide whether the query shows abnormal differences
+  consistent with a defect that are not explained by normal variation.
+  Answer with only 'Yes' or 'No'. Do not explain or think step by step.
+
+user_prompt_logits_few_shot: |-
+  The picture shows a 2×2 grid. Top-left is the query image. Top-right,
+  bottom-left, and bottom-right are three reference views of the same product.
+  The references are unlabeled and may include defective examples — do not
+  treat them as guaranteed ground truth for normal appearance.
+
+  Use the references as context for what the product typically looks like and
+  its expected range of natural variation. If a feature appears consistently
+  across most or all references, treat it as likely normal. If the query shows
+  something that stands out clearly beyond that range, flag it as a defect.
+
+  There are 2 types of potential defects:
+
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Does the query image show a defect not explained by normal variation seen in
+  the references? Answer only Yes or No.

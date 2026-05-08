@@ -1,0 +1,70 @@
+# ============================================================
+# SAM3 Defect Detection — Base Config
+# ============================================================
+# Shared settings for all experiments. Only 'data_dir' is required.
+# Per-experiment overrides go in separate files (see exp_example.yaml).
+
+# --- Data ---
+data_dir: /data/kaputt1/
+split: train                  # train | validation | test
+is_defect: "any"                # true | false | any
+major_defect: "any"            # true | false | any
+defect_type: structural       # structural | logical | any
+num_data: 3000                  # max samples after filtering (-1 = all)
+crop: false
+input_size: null
+
+# --- Model ---
+model_name: facebook/sam3
+cache_dir: /storage/SAM3/hf
+
+# --- Inference ---
+mask: false                   # apply GT mask to zero-out background
+batch_size: 8
+mask_threshold: 0.5
+gpu_id: 0                    # which CUDA GPU to use (0, 1, 2, ...)
+
+# --- Thresholds for AUROC / confusion matrix ---
+# Inference runs once at the lowest threshold; AUROC and confusion
+# matrices are computed post-hoc for every threshold in this list.
+thresholds:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+
+# --- Experiment ---
+# exp_name is intentionally omitted here — set it in each override file.
+
+# --- Prompts ---
+# Map each defect type to one or more text prompts.
+# Each image is evaluated with every prompt for its defect type;
+# the maximum detection score is kept as the final prediction.
+# Remove or set to null for single-prompt mode (defect type name only).
+prompts:
+  deformation:
+    - "damaged book"
+    - "crushed box"
+    # - "bent surface"
+
+  deconstruction:
+    - "detached piece"
+    # - "collapsed structure"
+    - "broken part"
+  
+  penetration:
+    - "torn hole"
+  
+  superficial:
+    # - "dirt mark"
+    - "surface scratch"
+
+  spillage:
+    - "liquid leakage"
+    - "powder leakage"
+    - "spilled contents"

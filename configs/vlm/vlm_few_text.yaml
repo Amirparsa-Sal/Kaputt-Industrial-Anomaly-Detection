@@ -1,0 +1,44 @@
+exp_name: vlm_few
+
+# Override inference parameters
+shot_mode: few_shot
+mask: false
+crop: true
+scoring_mode: text
+input_size: 2048
+num_data: 1500  
+
+system_prompt_text_few_shot: |-
+  You are an expert quality control inspector. The user image is a 2×2 grid:
+  top-left is the query product image; the other three panels are reference
+  images of the same product in good condition. Compare the query to the
+  references and judge whether meaningful differences indicate a defect in
+  the query.
+
+user_prompt_text_few_shot: |-
+  The picture shows a 2×2 grid. Top-left is the query image. Top-right,
+  bottom-left, and bottom-right are three reference views of the same product
+  in normal (non-defective) condition.
+
+  Use the references as the baseline for how the product should look. Compare the query to them and describe
+  relevant similarities and differences. There are 2 types of potential defects:
+
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Compare the query to the references, provide a short explanation, then output
+  one numeric anomaly score between 0.0 and 1.0.
+
+  Return EXACTLY in this format:
+  ANALYSIS: <brief explanation>
+  SCORE: <number between 0.0 and 1.0>
+
+  Do not output DEFECT labels or any additional fields.

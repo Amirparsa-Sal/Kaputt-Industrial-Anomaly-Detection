@@ -1,0 +1,46 @@
+# ============================================================
+# Tournament — League / Swiss (override)
+# ============================================================
+# Swiss-system pairwise comparisons over ⌈log₂(m+1)⌉ rounds.
+# Each round sorts images by accumulated score, pairs adjacent
+# participants, and asks the VLM which is more anomalous.
+# Uses logits scoring: P(Yes) from next-token yes/no logits
+# gives a continuous confidence ∈ [0, 1] without relying on
+# generated text.  Winner gets +confidence, loser +(1−confidence).
+#
+# Usage:
+#   python run_tournament_inference.py --config configs/tournament_base.yaml \
+#       --override configs/tournament_league_swiss.yaml
+
+exp_name: league_swiss
+
+tournament_strategy: league
+league_type: swiss
+scoring_mode: logits
+num_references: 3
+use_grid: true
+input_size: 1024
+
+system_prompt_league_logits: |-
+  You are a quality inspector comparing two product images.
+  Determine which image appears more anomalous or defective.
+  Answer with only 'Yes' or 'No'. Do not explain or think step by step.
+
+user_prompt_league_logits: |-
+  {image_description}
+
+  Compare the two images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, or book)
+  - Missing Unit: one or more expected parts or units are absent
+
+  Is Image A more anomalous than Image B? Answer only Yes or No.
