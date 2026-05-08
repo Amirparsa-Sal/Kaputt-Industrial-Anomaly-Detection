@@ -29,40 +29,63 @@ def load_and_filter_data(cfg: Any) -> pd.DataFrame:
     df = df.copy()
     df["original_index"] = df.index.to_numpy()
 
-    if cfg.is_defect == "true":
-        df = df[df["defect"]].copy()
-    elif cfg.is_defect == "false":
-        df = df[~df["defect"]].copy()
+    has_labels = "defect" in df.columns
 
-    if cfg.major_defect == "true":
-        df = df[~df["defect"] | df["major_defect"]].copy()
-    elif cfg.major_defect == "false":
-        df = df[~df["defect"] | ~df["major_defect"]].copy()
+    if has_labels:
+        if cfg.is_defect == "true":
+            df = df[df["defect"]].copy()
+        elif cfg.is_defect == "false":
+            df = df[~df["defect"]].copy()
 
-    if cfg.defect_type != "any":
-        primary = df["defect_types"].str.split(",").str[0].fillna("")
-        if cfg.defect_type == "structural":
-            keep = ~df["defect"] | ~primary.isin(LOGICAL_DEFECT_TYPES)
-        elif cfg.defect_type == "logical":
-            keep = ~df["defect"] | primary.isin(LOGICAL_DEFECT_TYPES)
-        df = df[keep].copy()
+        if "major_defect" in df.columns:
+            if cfg.major_defect == "true":
+                df = df[~df["defect"] | df["major_defect"]].copy()
+            elif cfg.major_defect == "false":
+                df = df[~df["defect"] | ~df["major_defect"]].copy()
+
+        if cfg.defect_type != "any" and "defect_types" in df.columns:
+            primary = df["defect_types"].str.split(",").str[0].fillna("")
+            if cfg.defect_type == "structural":
+                keep = ~df["defect"] | ~primary.isin(LOGICAL_DEFECT_TYPES)
+            elif cfg.defect_type == "logical":
+                keep = ~df["defect"] | primary.isin(LOGICAL_DEFECT_TYPES)
+            df = df[keep].copy()
+    else:
+        if cfg.is_defect != "any":
+            logger.warning(
+                f"is_defect={cfg.is_defect!r} ignored — no 'defect' column "
+                "in dataset (test mode)."
+            )
+        if cfg.major_defect != "any":
+            logger.warning(
+                f"major_defect={cfg.major_defect!r} ignored — no "
+                "'major_defect' column in dataset (test mode)."
+            )
+        if cfg.defect_type != "any":
+            logger.warning(
+                f"defect_type={cfg.defect_type!r} ignored — no 'defect' "
+                "column in dataset (test mode)."
+            )
 
     if cfg.num_data > 0 and len(df) > cfg.num_data:
-        # Stratified sampling to preserve the defective / non-defective ratio
-        defective = df[df["defect"]]
-        non_defective = df[~df["defect"]]
-        ratio = len(defective) / len(df)
-        n_defective = round(cfg.num_data * ratio)
-        n_non_defective = cfg.num_data - n_defective
+        if has_labels:
+            # Stratified sampling to preserve the defective / non-defective ratio
+            defective = df[df["defect"]]
+            non_defective = df[~df["defect"]]
+            ratio = len(defective) / len(df)
+            n_defective = round(cfg.num_data * ratio)
+            n_non_defective = cfg.num_data - n_defective
 
-        n_defective = min(n_defective, len(defective))
-        n_non_defective = min(n_non_defective, len(non_defective))
+            n_defective = min(n_defective, len(defective))
+            n_non_defective = min(n_non_defective, len(non_defective))
 
-        sampled = pd.concat([
-            defective.sample(n=n_defective, random_state=42),
-            non_defective.sample(n=n_non_defective, random_state=42),
-        ])
-        df = sampled.copy()
+            sampled = pd.concat([
+                defective.sample(n=n_defective, random_state=42),
+                non_defective.sample(n=n_non_defective, random_state=42),
+            ])
+            df = sampled.copy()
+        else:
+            df = df.sample(n=cfg.num_data, random_state=42).copy()
 
     logger.info(f"After filtering: {len(df)} samples")
     df = df.sort_values("original_index", kind="mergesort").reset_index(drop=True)
@@ -246,7 +269,7 @@ def build_all_prompt_pairs(
 def write_inference_predictions_csv(
     df: pd.DataFrame,
     max_scores: np.ndarray,
-    labels: np.ndarray,
+    labels: np.ndarray | None,
     data_dir: str,
     crop: bool,
     out_path: str,
@@ -254,7 +277,10 @@ def write_inference_predictions_csv(
 ) -> None:
     """
     Write one row per image: original parquet row index, absolute path, score,
-    and binary label.
+    and binary label (when available).
+
+    When *labels* is ``None`` (e.g. test split with no ground truth), the
+    ``label`` column is omitted from the output CSV.
 
     When *model_outputs* is provided (same length as *df*), an extra column
     ``model_output`` stores a human-readable inference log (e.g. tournament
@@ -274,7 +300,9 @@ def write_inference_predictions_csv(
             f"model_outputs length {len(model_outputs)} != df length {n}",
         )
 
-    header = ["original_index", "image_path", "predicted_score", "label"]
+    header = ["original_index", "image_path", "predicted_score"]
+    if labels is not None:
+        header.append("label")
     if model_outputs is not None:
         header.append("model_output")
 
@@ -285,7 +313,9 @@ def write_inference_predictions_csv(
             orig_idx = df.iloc[i]["original_index"] if has_orig else i
             rel = df.iloc[i][col]
             full_path = os.path.abspath(os.path.join(data_dir, rel))
-            row = [orig_idx, full_path, float(max_scores[i]), int(labels[i])]
+            row = [orig_idx, full_path, float(max_scores[i])]
+            if labels is not None:
+                row.append(int(labels[i]))
             if model_outputs is not None:
                 row.append(model_outputs[i])
             writer.writerow(row)
@@ -320,7 +350,7 @@ def load_checkpoint_csv(csv_path: str) -> dict[int, dict]:
 def write_checkpoint_csv(
     df: pd.DataFrame,
     max_scores: np.ndarray,
-    labels: np.ndarray,
+    labels: np.ndarray | None,
     completed_mask: np.ndarray,
     data_dir: str,
     crop: bool,
@@ -333,6 +363,9 @@ def write_checkpoint_csv(
     Same column format as :func:`write_inference_predictions_csv` so that
     the file can be used directly with ``--resume-csv`` or as a final
     predictions file if the experiment never finishes.
+
+    When *labels* is ``None`` (e.g. test split with no ground truth), the
+    ``label`` column is omitted from the output CSV.
 
     Parameters
     ----------
@@ -349,7 +382,9 @@ def write_checkpoint_csv(
     has_orig = "original_index" in df.columns
     n = len(df)
 
-    header = ["original_index", "image_path", "predicted_score", "label"]
+    header = ["original_index", "image_path", "predicted_score"]
+    if labels is not None:
+        header.append("label")
     has_model = model_outputs is not None
     if has_model:
         header.append("model_output")
@@ -364,7 +399,9 @@ def write_checkpoint_csv(
             orig_idx = df.iloc[i]["original_index"] if has_orig else i
             rel = df.iloc[i][col]
             full_path = os.path.abspath(os.path.join(data_dir, rel))
-            row = [orig_idx, full_path, float(max_scores[i]), int(labels[i])]
+            row = [orig_idx, full_path, float(max_scores[i])]
+            if labels is not None:
+                row.append(int(labels[i]))
             if has_model:
                 row.append(model_outputs[i])
             writer.writerow(row)

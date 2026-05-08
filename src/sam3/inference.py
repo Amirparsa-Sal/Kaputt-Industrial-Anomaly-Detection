@@ -93,7 +93,8 @@ def run_inference(
     logger.info(f"Using inference threshold: {inference_threshold}")
 
     # --- Checkpoint tracking ---
-    labels = df["defect"].astype(int).values
+    has_labels = "defect" in df.columns
+    labels = df["defect"].astype(int).values if has_labels else None
     completed_mask = np.zeros(num_images, dtype=bool)
     prompts_done = np.zeros(num_images, dtype=int)
     for ri in resumed_rows:

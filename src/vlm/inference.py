@@ -373,7 +373,8 @@ def run_vlm_inference(
         logger.info(f"Yes token IDs: {yes_ids}, No token IDs: {no_ids}")
 
     total_time = 0.0
-    labels = df["defect"].astype(int).values
+    has_labels = "defect" in df.columns
+    labels = df["defect"].astype(int).values if has_labels else None
     report_interval_s = cfg.report_interval_minutes * 60
     last_report_time = time.time()
     processed = 0
@@ -438,9 +439,9 @@ def run_vlm_inference(
                 )
                 last_save_count = processed
 
-        # --- Periodic interim report ---
+        # --- Periodic interim report (only when ground-truth labels exist) ---
         now = time.time()
-        if now - last_report_time >= report_interval_s:
+        if labels is not None and now - last_report_time >= report_interval_s:
             scored_mask = seen_mask[:num_images]
             scored_labels = labels[scored_mask]
             scored_scores = max_scores[scored_mask]
