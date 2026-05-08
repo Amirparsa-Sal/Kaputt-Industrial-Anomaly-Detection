@@ -592,9 +592,7 @@ def _league_final_ranking_block(
         range(len(league_scores)),
         key=lambda i: (-league_scores[i], i),
     )
-    lines = [
-        "Final ranking (most anomalous first, by raw league points):",
-    ]
+    lines = ["Final ranking:"]
     for pos, slot in enumerate(order, 1):
         orig = int(perm[slot])
         lines.append(
@@ -690,22 +688,9 @@ def _run_league_single(
     else:
         normalised = 0.5
 
-    header = (
-        "Pairwise matches: first name = Image A in the VLM prompt (left / "
-        "first attachment); values are P(A more anomalous) vs P(B more "
-        "anomalous) from the parsed confidence.\n"
-    )
     body = "\n".join(match_lines)
-    footer = "\n\n".join(
-        [
-            _league_final_ranking_block(perm, league_scores),
-            (
-                f"Query normalized anomaly score "
-                f"(min-max over this tournament): {normalised:.6f}"
-            ),
-        ],
-    )
-    return normalised, header + body + "\n\n" + footer
+    ranking_block = _league_final_ranking_block(perm, league_scores)
+    return normalised, body + "\n\n" + ranking_block
 
 
 # ---------------------------------------------------------------------------
