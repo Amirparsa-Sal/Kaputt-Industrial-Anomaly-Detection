@@ -12,7 +12,7 @@ split: train                    # train | validation | test
 is_defect: "any"
 major_defect: "any"
 defect_type: any                # structural | logical | any
-num_data: 10                  # -1 = all
+num_data: -1                 # -1 = all
 crop: true
 mask: false
 # Required for few_shot (side length of the final 2×2 montage in pixels).

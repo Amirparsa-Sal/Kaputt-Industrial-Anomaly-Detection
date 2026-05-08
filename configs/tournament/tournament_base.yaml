@@ -12,7 +12,7 @@ split: train
 is_defect: "any"
 major_defect: "any"
 defect_type: any
-num_data: 10
+num_data: -1
 crop: true
 mask: false
 input_size: 1024

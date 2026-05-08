@@ -10,7 +10,7 @@ split: train                  # train | validation | test
 is_defect: "any"                # true | false | any
 major_defect: "any"            # true | false | any
 defect_type: structural       # structural | logical | any
-num_data: 3000                  # max samples after filtering (-1 = all)
+num_data: -1                  # max samples after filtering (-1 = all)
 crop: false
 input_size: null
 

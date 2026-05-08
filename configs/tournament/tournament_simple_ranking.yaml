@@ -13,7 +13,7 @@ exp_name: league_simple_ranking
 tournament_strategy: simple_ranking
 num_references: 3
 use_grid: true
-repeat: 1
+repeat: 5
 input_size: 1024
 
 system_prompt_ranking: |-
