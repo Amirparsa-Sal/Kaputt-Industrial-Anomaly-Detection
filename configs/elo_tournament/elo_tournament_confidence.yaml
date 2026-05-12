@@ -1,0 +1,64 @@
+exp_name: elo_tournament_confidence
+match_mode: confidence
+
+# --- ELO parameters ---
+elo_d: 0.5
+# Inherits elo_k list from base config. Override here if needed:
+elo_k: [0.100, 0.175, 0.250]
+
+# --- Match mode: "confidence" or "wdl" ---
+match_mode: confidence
+
+# --- Zero-shot scoring ---
+zero_shot_scoring_mode: logits
+
+# --- Tournament ---
+use_grid: true
+
+system_prompt_match_confidence: |-
+  You are a quality inspector comparing two product images.
+  Determine the degree of relative anomaly or defect difference between the two images.
+
+  Output only in the following format:
+  CONFIDENCE: score
+
+  The score must be a real number between 0 and 1.
+
+  The score represents how strongly the images differ in anomaly severity,
+  with higher values indicating stronger evidence that Image A is more
+  anomalous with respect to Image B.
+
+  Do not explain. Do not think step by step.
+  Do not output anything except the required format.
+
+user_prompt_match_confidence: |-
+  {image_description}
+
+  Compare the two images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents, such as liquid, powder, or granules
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, book, ...) or not properly wrapped objects
+  - Missing Unit: one or more expected parts or units are absent
+
+  Assign a confidence score from 0 to 1 indicating the relative anomaly gap
+  between Image A and Image B.
+
+  Scoring guidance:
+  - Values near 0.0 mean that A is really less anomalous than B.
+  - Values near 0.5 mean there is little or no visible anomaly difference.
+  - Values near 1.0 mean there is a very strong anomaly difference, with clear evidence that Image A is more anomalous with respect to Image B.
+  - The values should not necessarily be close to 0, 0.5, or 1. Your score should be proportional to the perceived anomaly difference and reflect the confidence and magnitude of that difference continuously over the full range [0,1].
+  
+  The score is always referred to Image A.
+
+  Output only:
+  CONFIDENCE: score

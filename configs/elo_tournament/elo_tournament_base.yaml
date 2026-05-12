@@ -1,0 +1,225 @@
+# ============================================================
+# ELO Tournament — Base Config
+# ============================================================
+#
+# Three-step pipeline:
+#   1. Zero-shot scoring of every image (queries + references).
+#   2. Reference-only pairwise tournament (ELO updates).
+#   3. Query vs. reference pairwise tournament (ELO updates).
+#
+# Usage:
+#   python scripts/run_elo_tournament_inference.py \
+#       --config configs/elo_tournament/elo_tournament_base.yaml \
+#       --session-dir experiments/my_session
+#
+#   # WDL mode override:
+  # python scripts/run_elo_tournament_inference.py \
+  #     --session-dir experiments/my_session \
+  #     --config configs/elo_tournament/elo_tournament_base.yaml \
+  #     --override configs/elo_tournament/elo_tournament_confidence.yaml configs/elo_tournament/elo_tournament_wdl.yaml \
+
+# --- Data ---
+data_dir: /data/kaputt1/
+split: train
+is_defect: "any"
+major_defect: "any"
+defect_type: any
+num_data: 3000
+crop: true
+mask: false
+input_size: 1024
+
+# --- Model ---
+model_name: Qwen/Qwen3.5-9B
+cache_dir: /storage/VLM/hf
+
+# --- GPU & Memory ---
+gpu_id: 0
+load_in_4bit: false
+min_pixels: 200704
+max_pixels: 401408
+
+# --- Generation ---
+temperature: 0.0
+max_new_tokens: 256
+enable_thinking: false
+report_interval_minutes: 30
+
+# --- Failure recovery ---
+samples_per_save: 50
+
+# --- ELO parameters ---
+# Single value or list of values to evaluate simultaneously.
+# Multiple k values reuse the same VLM calls — no extra inference cost.
+# elo_k: 0.1
+# --- ELO parameters ---
+elo_d: 0.5
+# Inherits elo_k list from base config. Override here if needed:
+elo_k: [0.100, 0.175, 0.250]
+
+
+# --- Match mode: "confidence" or "wdl" ---
+match_mode: confidence
+
+# --- Zero-shot scoring ---
+zero_shot_scoring_mode: logits
+
+# Optional: paths to pre-computed zero-shot CSVs.
+# If provided and partial, remaining images are scored and the CSV updated.
+# If omitted, scores are computed from scratch and saved in the experiment dir.
+# zero_shot_query_csv: /path/to/zero_shot_queries.csv
+# zero_shot_reference_csv: /path/to/zero_shot_references.csv
+
+# --- Tournament ---
+num_references: 3
+use_grid: true
+
+# --- Thresholds ---
+thresholds:
+  - 0.1
+  - 0.2
+  - 0.3
+  - 0.4
+  - 0.5
+  - 0.6
+  - 0.7
+  - 0.8
+  - 0.9
+
+exp_name: elo_tournament_confidence
+
+# ============================================================
+# Prompts
+# ============================================================
+
+# --- Zero-shot text prompts (used when zero_shot_scoring_mode: text) ---
+system_prompt_zero_shot_text: |-
+  You are an expert quality control inspector analyzing products for defects.
+
+user_prompt_zero_shot_text: |-
+  Examine this product image carefully for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, book, ...) or not properly wrapped objects
+  - Missing Unit: one or more expected parts or units are absent
+
+  Analyze the image and provide a short explanation, then output a numeric
+  anomaly score between 0.0 and 1.0.
+
+  Return EXACTLY in this format:
+  ANALYSIS: <brief explanation>
+  SCORE: <number between 0.0 and 1.0>
+
+  Do not output DEFECT labels or any additional fields.
+
+# --- Zero-shot logits prompts (used when zero_shot_scoring_mode: logits) ---
+system_prompt_zero_shot_logits: |-
+  You are a quality inspector. Answer questions with only
+  'Yes' or 'No'. Do not explain or think step by step.
+
+user_prompt_zero_shot_logits: |-
+  Examine this product image carefully for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, book, ...) or not properly wrapped objects
+  - Missing Unit: one or more expected parts or units are absent
+
+  Is there any defect visible in this image? Answer only Yes or No.
+
+# --- Match prompts — confidence mode (generate CONFIDENCE: <float>) ---
+# Template placeholder: {image_description}
+system_prompt_match_confidence: |-
+  You are a quality inspector comparing two product images.
+  Determine the degree of relative anomaly or defect difference between the two images.
+
+  Output only in the following format:
+  CONFIDENCE: score
+
+  The score must be a real number between 0 and 1.
+
+  The score represents how strongly the images differ in anomaly severity,
+  with higher values indicating stronger evidence that Image A is more
+  anomalous with respect to Image B.
+
+  Do not explain. Do not think step by step.
+  Do not output anything except the required format.
+
+user_prompt_match_confidence: |-
+  {image_description}
+
+  Compare the two images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents, such as liquid, powder, or granules
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, book, ...) or not properly wrapped objects
+  - Missing Unit: one or more expected parts or units are absent
+
+  Assign a confidence score from 0 to 1 indicating the relative anomaly gap
+  between Image A and Image B.
+
+  Scoring guidance:
+  - Values near 0.0 mean that A is really less anomalous than B.
+  - Values near 0.5 mean there is little or no visible anomaly difference.
+  - Values near 1.0 mean there is a very strong anomaly difference, with clear evidence that Image A is more anomalous with respect to Image B.
+  - The values should not necessarily be close to 0, 0.5, or 1. Your score should be proportional to the perceived anomaly difference and reflect the confidence and magnitude of that difference continuously over the full range [0,1].
+  
+  The score is always referred to Image A.
+
+  Output only:
+  CONFIDENCE: score
+
+# --- Match prompts — WDL mode (generate RESULT: WIN/DRAW/LOSS) ---
+system_prompt_match_wdl: |-
+  You are a quality inspector comparing two product images.
+  Determine which image appears more anomalous or defective.
+  Output only the result in the specified format.
+  Do not explain. Do not think step by step.
+
+user_prompt_match_wdl: |-
+  {image_description}
+
+  Compare the two images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents, such as liquid, powder, or granules
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, book, ...) or not properly wrapped objects
+  - Missing Unit: one or more expected parts or units are absent
+
+  Determine whether Image A is more anomalous than Image B.
+
+  Output EXACTLY in one of these formats:
+  RESULT: WIN    (Image A is clearly more anomalous than Image B)
+  RESULT: DRAW   (both images appear equally anomalous or equally normal)
+  RESULT: LOSS   (Image B is clearly more anomalous than Image A)

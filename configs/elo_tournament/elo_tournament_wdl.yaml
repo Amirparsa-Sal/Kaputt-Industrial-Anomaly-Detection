@@ -1,0 +1,62 @@
+# ============================================================
+# ELO Tournament — WDL (Win/Draw/Loss) Override
+# ============================================================
+# Uses discrete match outcomes instead of continuous confidence.
+# WIN  → s = 1.0  (Image A is more anomalous)
+# DRAW → s = 0.5  (no meaningful difference)
+# LOSS → s = 0.0  (Image B is more anomalous)
+#
+# Usage:
+#   python scripts/run_elo_tournament_inference.py \
+#       --config configs/elo_tournament/elo_tournament_base.yaml \
+#       --override configs/elo_tournament/elo_tournament_wdl.yaml \
+#       --session-dir experiments/my_session
+
+exp_name: elo_tournament_wdl
+match_mode: wdl
+
+
+# --- ELO parameters ---
+elo_d: 0.5
+# Inherits elo_k list from base config. Override here if needed:
+elo_k: [0.100, 0.175, 0.250]
+
+# --- Match mode: "confidence" or "wdl" ---
+match_mode: confidence
+
+# --- Zero-shot scoring ---
+zero_shot_scoring_mode: logits
+
+# --- Tournament ---
+use_grid: true
+
+system_prompt_match_wdl: |-
+  You are a quality inspector comparing two product images.
+  Determine which image appears more anomalous or defective.
+  Output only the result in the specified format.
+  Do not explain. Do not think step by step.
+
+user_prompt_match_wdl: |-
+  {image_description}
+
+  Compare the two images for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents, such as liquid, powder, or granules
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, book, ...) or not properly wrapped objects
+  - Missing Unit: one or more expected parts or units are absent
+
+  Determine whether Image A is more anomalous than Image B.
+
+  Output EXACTLY in one of these formats:
+  RESULT: WIN    (Image A is clearly more anomalous than Image B)
+  RESULT: DRAW   (both images appear equally anomalous or equally normal)
+  RESULT: LOSS   (Image B is clearly more anomalous than Image A)
