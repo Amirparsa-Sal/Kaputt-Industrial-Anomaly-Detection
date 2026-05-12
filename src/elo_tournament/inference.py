@@ -393,9 +393,19 @@ def run_elo_tournament_inference(
             "ELO tournament requires an 'item_identifier' column."
         )
 
-    # ---- Step 0: reference lookup ----
-    ref_lookup = build_tournament_reference_lookup(
+    # ---- Step 0: reference lookup (only items present in query df) ----
+    full_ref_lookup = build_tournament_reference_lookup(
         cfg.data_dir, cfg.split, cfg.crop, cfg.num_references,
+    )
+    query_item_ids = set(df["item_identifier"].astype(str).unique())
+    ref_lookup = {
+        item_id: paths
+        for item_id, paths in full_ref_lookup.items()
+        if item_id in query_item_ids
+    }
+    logger.info(
+        "Reference lookup: %d / %d items match current query set.",
+        len(ref_lookup), len(full_ref_lookup),
     )
 
     # ---- Step 1: zero-shot scoring ----
