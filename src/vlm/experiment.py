@@ -292,7 +292,8 @@ def run_vlm_experiment(
         samples_per_save=cfg.samples_per_save,
         resume_data=resume_data,
     )
-    labels = df["defect"].astype(int).values
+    has_labels = "defect" in df.columns
+    labels = df["defect"].astype(int).values if has_labels else None
     write_inference_predictions_csv(
         df,
         max_scores,
@@ -304,136 +305,148 @@ def run_vlm_experiment(
     )
     logger.info(f"  Per-image predictions saved to {predictions_csv}")
 
-    num_positive = int(labels.sum())
-    num_negative = int(len(labels) - num_positive)
-    num_detected = int((max_scores > 0.5).sum())
-
-    # ---- AUROC & AP ----
-    auroc_value, fpr, tpr, roc_thresholds = compute_auroc(labels, max_scores)
-    if num_positive > 0 and num_negative > 0:
-        overall_ap = average_precision_score(labels, max_scores)
-    else:
-        overall_ap = float("nan")
-
-    logger.info("")
-    logger.info("=" * 60)
-    logger.info("Binary Classification — AUROC & Average Precision")
-    logger.info("=" * 60)
-    logger.info(f"  Samples evaluated: {len(labels)}")
-    logger.info(f"  Positive (defect): {num_positive}")
-    logger.info(f"  Negative (normal): {num_negative}")
-    logger.info(f"  Detected (score>0.5): {num_detected}")
-    auroc_str = f"{auroc_value:.4f}" if not np.isnan(auroc_value) else "N/A"
-    ap_str = f"{overall_ap:.4f}" if not np.isnan(overall_ap) else "N/A"
-    logger.info(f"  AUROC:             {auroc_str}")
-    logger.info(f"  Average Precision: {ap_str}")
-    logger.info("=" * 60)
-
-    # ---- Per-threshold binary metrics ----
+    # ---- Evaluation metrics (only when ground-truth labels are available) ----
+    auroc_value = float("nan")
+    overall_ap = float("nan")
+    best_threshold = float("nan")
+    best_metrics: dict = {}
     per_threshold_metrics: list[dict] = []
-    logger.info("")
-    logger.info("=" * 60)
-    logger.info("Classification Metrics per Threshold")
-    logger.info("=" * 60)
-    logger.info(
-        f"  {'Thresh':>7s}  {'TP':>5s}  {'FP':>5s}  {'FN':>5s}  {'TN':>5s}"
-        f"  {'Acc':>7s}  {'Prec':>7s}  {'Rec':>7s}  {'F1':>7s}"
-    )
-    logger.info("-" * 72)
-    for t in cfg.thresholds:
-        m = compute_binary_metrics(labels, max_scores, t)
-        per_threshold_metrics.append(m)
-        logger.info(
-            f"  {t:>7.2f}  {m['tp']:>5d}  {m['fp']:>5d}  "
-            f"{m['fn']:>5d}  {m['tn']:>5d}"
-            f"  {m['accuracy']:>7.4f}  {m['precision']:>7.4f}"
-            f"  {m['recall']:>7.4f}  {m['f1']:>7.4f}"
-        )
-    logger.info("=" * 60)
-
-    best_threshold, best_metrics = find_best_threshold(
-        labels, max_scores, cfg.thresholds,
-    )
-    logger.info(
-        f"\n  Best threshold (by Precision): {best_threshold:.2f}  "
-        f"(Precision={best_metrics['precision']:.4f}, "
-        f"F1={best_metrics['f1']:.4f}, "
-        f"Recall={best_metrics['recall']:.4f})"
-    )
-
-    # ---- Confusion matrices ----
-    cm_dir = os.path.join(exp_dir, "confusion_matrices")
-    os.makedirs(cm_dir, exist_ok=True)
-
-    # Always: binary confusion matrix
-    binary_true = [
-        "defective" if d else "non_defective" for d in df["defect"].values
-    ]
-    for t in cfg.thresholds:
-        binary_pred = [
-            "defective" if s >= t else "non_defective"
-            for s in max_scores
-        ]
-        plot_confusion_matrix(
-            binary_true, binary_pred,
-            ["non_defective", "defective"], t,
-            os.path.join(cm_dir, f"cm_binary_{t:.2f}.png"),
-        )
-
-    # ---- Per-prompt / per-pair analysis ----
     per_prompt: list[dict] = []
     per_pair: list[dict] = []
-    if pair_scores:
-        per_prompt = compute_per_prompt_metrics(
-            df, pair_scores, thresholds=cfg.thresholds,
+    fpr: np.ndarray = np.array([])
+    tpr: np.ndarray = np.array([])
+    roc_thresholds: np.ndarray = np.array([])
+
+    if not has_labels:
+        logger.info(
+            "No ground-truth 'defect' column in dataset — "
+            "skipping evaluation metrics (test mode)."
         )
-        per_pair = compute_per_pair_metrics(
-            df, pair_scores, crop=cfg.crop,
-        )
+    else:
+        num_positive = int(labels.sum())
+        num_negative = int(len(labels) - num_positive)
+        num_detected = int((max_scores > 0.5).sum())
+
+        # ---- AUROC & AP ----
+        auroc_value, fpr, tpr, roc_thresholds = compute_auroc(labels, max_scores)
+        if num_positive > 0 and num_negative > 0:
+            overall_ap = average_precision_score(labels, max_scores)
 
         logger.info("")
         logger.info("=" * 60)
-        logger.info("Per-Prompt Metrics  (AP, AUROC, Best Threshold)")
+        logger.info("Binary Classification — AUROC & Average Precision")
+        logger.info("=" * 60)
+        logger.info(f"  Samples evaluated: {len(labels)}")
+        logger.info(f"  Positive (defect): {num_positive}")
+        logger.info(f"  Negative (normal): {num_negative}")
+        logger.info(f"  Detected (score>0.5): {num_detected}")
+        auroc_str = f"{auroc_value:.4f}" if not np.isnan(auroc_value) else "N/A"
+        ap_str = f"{overall_ap:.4f}" if not np.isnan(overall_ap) else "N/A"
+        logger.info(f"  AUROC:             {auroc_str}")
+        logger.info(f"  Average Precision: {ap_str}")
+        logger.info("=" * 60)
+
+        # ---- Per-threshold binary metrics ----
+        logger.info("")
+        logger.info("=" * 60)
+        logger.info("Classification Metrics per Threshold")
         logger.info("=" * 60)
         logger.info(
-            f"  {'Prompt':<35s} {'AP':>7s} {'AUROC':>7s} {'BestT':>7s}"
-            f" {'#Pos':>6s} {'#Neg':>6s}"
+            f"  {'Thresh':>7s}  {'TP':>5s}  {'FP':>5s}  {'FN':>5s}  {'TN':>5s}"
+            f"  {'Acc':>7s}  {'Prec':>7s}  {'Rec':>7s}  {'F1':>7s}"
         )
-        logger.info("-" * 75)
-        for row in per_prompt:
-            ap_s = (
-                f"{row['ap']:.4f}" if not np.isnan(row["ap"]) else "   N/A"
-            )
-            auroc_s = (
-                f"{row['auroc']:.4f}"
-                if not np.isnan(row["auroc"]) else "   N/A"
-            )
-            bt_s = (
-                f"{row['best_threshold']:.4f}"
-                if not np.isnan(row["best_threshold"]) else "   N/A"
-            )
+        logger.info("-" * 72)
+        for t in cfg.thresholds:
+            m = compute_binary_metrics(labels, max_scores, t)
+            per_threshold_metrics.append(m)
             logger.info(
-                f"  {row['prompt']:<35s} {ap_s:>7s} {auroc_s:>7s} "
-                f"{bt_s:>7s} {row['num_positive']:>6d} "
-                f"{row['num_negative']:>6d}"
+                f"  {t:>7.2f}  {m['tp']:>5d}  {m['fp']:>5d}  "
+                f"{m['fn']:>5d}  {m['tn']:>5d}"
+                f"  {m['accuracy']:>7.4f}  {m['precision']:>7.4f}"
+                f"  {m['recall']:>7.4f}  {m['f1']:>7.4f}"
             )
         logger.info("=" * 60)
 
-        logger.info("")
-        logger.info("=" * 60)
-        logger.info("Mean Detection Score per (Defect Type, Prompt)")
-        logger.info("=" * 60)
-        logger.info(
-            f"  {'Defect Type':<20s} {'Prompt':<35s} "
-            f"{'Mean':>7s} {'#Samples':>8s}"
+        best_threshold, best_metrics = find_best_threshold(
+            labels, max_scores, cfg.thresholds,
         )
-        logger.info("-" * 75)
-        for row in per_pair:
-            logger.info(
-                f"  {row['defect_type']:<20s} {row['prompt']:<35s} "
-                f"{row['mean_score']:>7.4f} {row['num_samples']:>8d}"
+        logger.info(
+            f"\n  Best threshold (by Precision): {best_threshold:.2f}  "
+            f"(Precision={best_metrics['precision']:.4f}, "
+            f"F1={best_metrics['f1']:.4f}, "
+            f"Recall={best_metrics['recall']:.4f})"
+        )
+
+        # ---- Confusion matrices ----
+        cm_dir = os.path.join(exp_dir, "confusion_matrices")
+        os.makedirs(cm_dir, exist_ok=True)
+
+        binary_true = [
+            "defective" if d else "non_defective" for d in df["defect"].values
+        ]
+        for t in cfg.thresholds:
+            binary_pred = [
+                "defective" if s >= t else "non_defective"
+                for s in max_scores
+            ]
+            plot_confusion_matrix(
+                binary_true, binary_pred,
+                ["non_defective", "defective"], t,
+                os.path.join(cm_dir, f"cm_binary_{t:.2f}.png"),
             )
-        logger.info("=" * 60)
+
+        # ---- Per-prompt / per-pair analysis ----
+        if pair_scores:
+            per_prompt = compute_per_prompt_metrics(
+                df, pair_scores, thresholds=cfg.thresholds,
+            )
+            per_pair = compute_per_pair_metrics(
+                df, pair_scores, crop=cfg.crop,
+            )
+
+            logger.info("")
+            logger.info("=" * 60)
+            logger.info("Per-Prompt Metrics  (AP, AUROC, Best Threshold)")
+            logger.info("=" * 60)
+            logger.info(
+                f"  {'Prompt':<35s} {'AP':>7s} {'AUROC':>7s} {'BestT':>7s}"
+                f" {'#Pos':>6s} {'#Neg':>6s}"
+            )
+            logger.info("-" * 75)
+            for row in per_prompt:
+                ap_s = (
+                    f"{row['ap']:.4f}" if not np.isnan(row["ap"]) else "   N/A"
+                )
+                auroc_s = (
+                    f"{row['auroc']:.4f}"
+                    if not np.isnan(row["auroc"]) else "   N/A"
+                )
+                bt_s = (
+                    f"{row['best_threshold']:.4f}"
+                    if not np.isnan(row["best_threshold"]) else "   N/A"
+                )
+                logger.info(
+                    f"  {row['prompt']:<35s} {ap_s:>7s} {auroc_s:>7s} "
+                    f"{bt_s:>7s} {row['num_positive']:>6d} "
+                    f"{row['num_negative']:>6d}"
+                )
+            logger.info("=" * 60)
+
+            logger.info("")
+            logger.info("=" * 60)
+            logger.info("Mean Detection Score per (Defect Type, Prompt)")
+            logger.info("=" * 60)
+            logger.info(
+                f"  {'Defect Type':<20s} {'Prompt':<35s} "
+                f"{'Mean':>7s} {'#Samples':>8s}"
+            )
+            logger.info("-" * 75)
+            for row in per_pair:
+                logger.info(
+                    f"  {row['defect_type']:<20s} {row['prompt']:<35s} "
+                    f"{row['mean_score']:>7.4f} {row['num_samples']:>8d}"
+                )
+            logger.info("=" * 60)
 
     # ---- Save & plot ----
     if cfg.exp_name:
@@ -468,7 +481,7 @@ def run_vlm_experiment(
                 os.path.join(exp_dir, "auroc_by_prompt_chart.png"),
             )
 
-        if pair_scores:
+        if pair_scores and has_labels:
             plot_prompt_type_matrix(
                 df, pair_scores,
                 os.path.join(exp_dir, "mean_score_matrix.png"),
