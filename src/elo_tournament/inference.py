@@ -540,7 +540,8 @@ def run_elo_tournament_inference(
     logger.info("=" * 50)
 
     total_time = 0.0
-    labels = df["defect"].astype(int).values
+    has_labels = "defect" in df.columns
+    labels = df["defect"].astype(int).values if has_labels else None
     processed = 0
     last_save_count = 0
     report_interval_s = cfg.report_interval_minutes * 60
@@ -664,28 +665,34 @@ def run_elo_tournament_inference(
         # ---- Periodic progress report (uses first k) ----
         now = time.time()
         if now - last_report_time >= report_interval_s:
-            pk = k_values[0]
-            scored_labels = labels[seen_mask]
-            scored_scores = scores_per_k[pk][seen_mask]
-            n_pos = int(scored_labels.sum())
-            n_neg = int(len(scored_labels) - n_pos)
-            if n_pos > 0 and n_neg > 0:
-                from sklearn.metrics import average_precision_score
-                interim_ap = average_precision_score(
-                    scored_labels, scored_scores,
-                )
-                logger.info(
-                    "\n  [Interim k=%.4f — %d/%d, %.1f min]  AP=%.4f  "
-                    "pos=%d neg=%d\n",
-                    pk, processed, num_images, total_time / 60,
-                    interim_ap, n_pos, n_neg,
-                )
+            if labels is not None:
+                pk = k_values[0]
+                scored_labels = labels[seen_mask]
+                scored_scores = scores_per_k[pk][seen_mask]
+                n_pos = int(scored_labels.sum())
+                n_neg = int(len(scored_labels) - n_pos)
+                if n_pos > 0 and n_neg > 0:
+                    from sklearn.metrics import average_precision_score
+                    interim_ap = average_precision_score(
+                        scored_labels, scored_scores,
+                    )
+                    logger.info(
+                        "\n  [Interim k=%.4f — %d/%d, %.1f min]  "
+                        "AP=%.4f  pos=%d neg=%d\n",
+                        pk, processed, num_images, total_time / 60,
+                        interim_ap, n_pos, n_neg,
+                    )
+                else:
+                    logger.info(
+                        "\n  [Interim — %d/%d, %.1f min]  "
+                        "AP=N/A  pos=%d neg=%d\n",
+                        processed, num_images, total_time / 60,
+                        n_pos, n_neg,
+                    )
             else:
                 logger.info(
-                    "\n  [Interim — %d/%d, %.1f min]  "
-                    "AP=N/A  pos=%d neg=%d\n",
+                    "\n  [Interim — %d/%d, %.1f min]\n",
                     processed, num_images, total_time / 60,
-                    n_pos, n_neg,
                 )
             last_report_time = now
 

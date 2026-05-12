@@ -317,9 +317,8 @@ def run_elo_tournament_experiment(
         )
     )
 
-    labels = df["defect"].astype(int).values
-    num_positive = int(labels.sum())
-    num_negative = int(len(labels) - num_positive)
+    has_labels = "defect" in df.columns
+    labels = df["defect"].astype(int).values if has_labels else None
 
     # ---- Save per-k prediction CSVs ----
     for k_val in k_values:
@@ -337,6 +336,54 @@ def run_elo_tournament_experiment(
         cfg.data_dir, cfg.crop, legacy_csv,
         model_outputs=text_per_k[k_values[0]],
     )
+
+    primary_k = k_values[0]
+    max_scores = scores_per_k[primary_k]
+    pair_scores = pair_scores_per_k[primary_k]
+
+    if not has_labels:
+        # ----- Test mode: no ground-truth labels — skip metrics -----
+        logger.info(
+            "No ground-truth 'defect' column in dataset — "
+            "skipping evaluation metrics (test mode)."
+        )
+
+        if cfg.exp_name:
+            _save_experiment(
+                cfg, config_path, override_path,
+                float("nan"), float("nan"), [], float("nan"),
+                [], [],
+                pair_scores=None, labels=None,
+                exp_dir=exp_dir,
+            )
+
+        _remove_handler(exp_handler)
+
+        return {
+            "exp_name": cfg.exp_name or "(unnamed)",
+            "auroc": float("nan"),
+            "average_precision": float("nan"),
+            "best_threshold": float("nan"),
+            "best_precision": 0.0,
+            "best_recall": 0.0,
+            "best_f1": 0.0,
+            "predictions_csv": legacy_csv,
+            "exp_dir": exp_dir,
+            "session_dir": session_dir,
+            "per_k_results": {
+                k: {
+                    "auroc": float("nan"),
+                    "ap": float("nan"),
+                    "best_threshold": float("nan"),
+                    "csv": _k_csv_path(exp_dir, k),
+                }
+                for k in k_values
+            },
+        }
+
+    # ----- Train / validation mode: full supervised evaluation -----
+    num_positive = int(labels.sum())
+    num_negative = int(len(labels) - num_positive)
 
     # ---- Compute metrics for ALL k values ----
     k_metrics: dict[float, dict] = {}
@@ -381,9 +428,6 @@ def run_elo_tournament_experiment(
         logger.info("=" * 60)
 
     # ---- Use primary k (first value) for detailed metrics & plots ----
-    primary_k = k_values[0]
-    max_scores = scores_per_k[primary_k]
-    pair_scores = pair_scores_per_k[primary_k]
     text_outputs = text_per_k[primary_k]
 
     km = k_metrics[primary_k]
@@ -562,7 +606,7 @@ def run_elo_tournament_experiment(
                 os.path.join(exp_dir, "auroc_by_prompt_chart.png"),
             )
 
-        if pair_scores:
+        if pair_scores and has_labels:
             plot_prompt_type_matrix(
                 df, pair_scores,
                 os.path.join(exp_dir, "mean_score_matrix.png"),

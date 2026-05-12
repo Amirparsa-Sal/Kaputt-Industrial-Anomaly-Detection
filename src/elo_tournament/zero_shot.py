@@ -276,7 +276,7 @@ def compute_zero_shot_queries(
     if cfg.zero_shot_scoring_mode == "logits":
         yes_ids, no_ids = _get_yes_no_token_ids(processor.tokenizer)
 
-    labels = df["defect"].astype(int).values
+    labels = df["defect"].astype(int).values if "defect" in df.columns else None
     save_path = auto_path
     computed = 0
 
