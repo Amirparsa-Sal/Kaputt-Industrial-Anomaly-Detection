@@ -536,7 +536,7 @@ def apply_filters(data_dir, split, is_defect, major_defect, defect_type, defect_
     status = f"Loaded **{n}** images (split: {split})"
 
     if n == 0:
-        return status, gr.update(maximum=0, value=0), gr.update(), None, None, ""
+        return status, gr.update(minimum=0, maximum=1, value=0), gr.update(), None, None, ""
 
     slider_update = gr.update(minimum=0, maximum=n - 1, value=0, step=1)
     img_original, img_processed, info = _get_current_images(False, False, None)
@@ -959,7 +959,7 @@ def build_ui(default_cfg: dict) -> gr.Blocks:
 
                 image_slider = gr.Slider(
                     label="Image Index",
-                    minimum=0, maximum=0, step=1, value=0,
+                    minimum=0, maximum=1, step=1, value=0,
                 )
 
                 # -- Images --
