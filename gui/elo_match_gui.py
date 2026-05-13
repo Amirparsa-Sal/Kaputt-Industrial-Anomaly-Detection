@@ -158,7 +158,7 @@ class BrowserState:
     current_idx: int = 0
     data_dir: str = ""
     ref_lookup: dict | None = None
-    query_scores: dict | None = None   # original_index → predicted_score
+    query_scores: dict | None = None   # parquet iloc key → predicted_score (CSV original_index)
     ref_scores: dict | None = None     # image_path → predicted_score
 
 
@@ -192,7 +192,14 @@ def _deep_merge(base: dict, override: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 def load_query_csv(csv_path: str) -> dict[int, float]:
-    """Load zero_shot_queries.csv → {original_index: predicted_score}."""
+    """
+    Load zero_shot_queries.csv → {original_index: predicted_score}.
+
+    ``original_index`` matches the row label stored by the training pipeline:
+    the parquet row index at load time (see ``load_and_filter``), i.e. the
+    same row you get from ``dataset_df.iloc[original_index]`` on the raw
+    query parquet before filtering.
+    """
     result: dict[int, float] = {}
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -232,6 +239,11 @@ def load_and_filter(
         raise FileNotFoundError(f"Parquet file not found: {parquet_path}")
 
     df = pd.read_parquet(parquet_path)
+    # Same convention as src.common.data.load_and_filter_data: preserve the
+    # parquet row position before any filtering. Zero-shot CSV ``original_index``
+    # refers to ``dataset_df.iloc[original_index]`` on the raw query parquet.
+    df = df.copy()
+    df["original_index"] = df.index.to_numpy()
 
     if is_defect == "true":
         df = df[df["defect"]].copy()
@@ -590,7 +602,6 @@ def apply_filters(
     except Exception as e:
         return f"Error loading references: {e}", gr.update(), gr.update(), None, [], ""
 
-    _state.df = df
     _state.data_dir = data_dir
     _state.current_idx = 0
     _state.ref_lookup = ref_lookup
@@ -610,10 +621,21 @@ def apply_filters(
         except Exception as e:
             print(f"[Warning] Could not load reference CSV: {e}")
 
+    # When a query CSV is provided, keep only rows whose ``original_index``
+    # appears in the CSV (aligned with experiment checkpoints).
+    if _state.query_scores:
+        csv_indices = set(_state.query_scores.keys())
+        df = df[df["original_index"].astype(int).isin(csv_indices)].copy()
+        df = df.sort_values("original_index", kind="mergesort").reset_index(
+            drop=True,
+        )
+
+    _state.df = df
+
     n = len(df)
     csv_info = ""
     if _state.query_scores:
-        csv_info += f"Query CSV: {len(_state.query_scores)} scores loaded. "
+        csv_info += f"Query CSV: {len(_state.query_scores)} scores → {n} matching images. "
     if _state.ref_scores:
         csv_info += f"Reference CSV: {len(_state.ref_scores)} scores loaded."
 
