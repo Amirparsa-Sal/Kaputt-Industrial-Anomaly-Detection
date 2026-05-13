@@ -1,0 +1,30 @@
+exp_name: vlm_zero
+
+# Override inference parameters
+shot_mode: zero_shot
+mask: false
+crop: true
+scoring_mode: logits
+input_size: 1024
+num_data: 3000  
+
+system_prompt_logits_zero_shot: |-
+  You are a quality inspector. Answer questions with only
+  'Yes' or 'No'. Do not explain or think step by step.
+
+user_prompt_logits_zero_shot: |-
+  Examine this product image carefully for any signs of damage or defect.
+
+  There are 2 types of potential defects:
+  1) Structural defects:
+  - Penetration: holes, tears, or cuts in packaging or product
+  - Deformation: dents, crushes, bent or warped surfaces
+  - Deconstruction: detached, collapsed, or disassembled parts
+  - Spillage: leaked or spilled contents (liquid, powder, granules)
+  - Superficial: surface damage such as dirt marks, scratches, or scuffs
+
+  2) Logical defects:
+  - Actuation: inappropriately opened containers (open box, bag, book, ...) or not properly wrapped objects
+  - Missing Unit: one or more expected parts or units are absent
+
+  Is there any defect visible in this image? Answer only Yes or No.
