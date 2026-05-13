@@ -21,6 +21,7 @@ Usage:
 import argparse
 import csv
 import os
+import sys
 import re
 import time
 from dataclasses import dataclass
@@ -191,6 +192,19 @@ def _deep_merge(base: dict, override: dict) -> dict:
 # CSV loaders for zero-shot scores
 # ---------------------------------------------------------------------------
 
+def _ensure_large_csv_field_limit() -> None:
+    """
+    Relax Python's csv module per-field size limit (default 128 KiB).
+
+    Zero-shot CSVs often include a long ``model_output`` column; without this,
+    DictReader raises ``field larger than field limit``.
+    """
+    try:
+        csv.field_size_limit(sys.maxsize)
+    except OverflowError:
+        csv.field_size_limit(2**31 - 1)
+
+
 def load_query_csv(csv_path: str) -> dict[int, float]:
     """
     Load zero_shot_queries.csv → {original_index: predicted_score}.
@@ -200,6 +214,7 @@ def load_query_csv(csv_path: str) -> dict[int, float]:
     same row you get from ``dataset_df.iloc[original_index]`` on the raw
     query parquet before filtering.
     """
+    _ensure_large_csv_field_limit()
     result: dict[int, float] = {}
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
@@ -212,6 +227,7 @@ def load_query_csv(csv_path: str) -> dict[int, float]:
 
 def load_reference_csv(csv_path: str) -> dict[str, float]:
     """Load zero_shot_references.csv → {image_path: predicted_score}."""
+    _ensure_large_csv_field_limit()
     result: dict[str, float] = {}
     with open(csv_path, newline="", encoding="utf-8") as f:
         reader = csv.DictReader(f)
